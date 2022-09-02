@@ -557,6 +557,7 @@ module GFS_typedefs
     real (kind=kind_phys), pointer :: dust_ext  (:,:)   => null()  !< 3D aod array
     !--- For MYNN PBL transport of  smoke and dust
     real (kind=kind_phys), pointer :: chem3d  (:,:,:)   => null()  !< 3D aod array
+    real (kind=kind_phys), pointer :: ddvel   (:,:  )   => null()  !< 2D dry deposition velocity
 
     !--- Fire plume rise diagnostics
     real (kind=kind_phys), pointer :: min_fplume (:)   => null()  !< minimum plume rise level
@@ -571,7 +572,7 @@ module GFS_typedefs
     real (kind=kind_phys), pointer :: pfl_lsan(:,:)   => null()  !< instantaneous 3D flux of liquid nonconvective precipitation (kg m-2 s-1)
 
     !--- instantaneous total moisture tendency for smoke coupling:
-    real (kind=kind_phys), pointer :: dqdti   (:,:)   => null()  !< rrfs_smoke=true only; instantaneous total moisture tendency (kg/kg/s)
+    real (kind=kind_phys), pointer :: dqdti   (:,:)   => null()  !< rrfs_sd=true only; instantaneous total moisture tendency (kg/kg/s)
 
     contains
       procedure :: create  => coupling_create  !<   allocate array data
@@ -665,7 +666,7 @@ module GFS_typedefs
     logical              :: cplwav2atm      !< default no wav->atm coupling
     logical              :: cplaqm          !< default no cplaqm collection
     logical              :: cplchm          !< default no cplchm collection
-    logical              :: rrfs_smoke      !< default no rrfs_smoke collection
+    logical              :: rrfs_sd         !< default no rrfs_sd collection
     integer              :: dust_smoke_rrtmg_band_number !< band number to affect in rrtmg_pre from smoke and dust
     logical              :: use_cice_alb    !< default .false. - i.e. don't use albedo imported from the ice model
     logical              :: cpl_imp_mrg     !< default no merge import with internal forcings
@@ -1336,10 +1337,12 @@ module GFS_typedefs
     integer              :: npsdelt         !< the index of surface air pressure at the previous timestep for Z-C MP in phy_f2d
     integer              :: ncnvwind        !< the index of surface wind enhancement due to convection for MYNN SFC and RAS CNV in phy f2d
 
-!-- chem nml variables for RRFS-Smoke
+!-- nml variables for RRFS-SD
+    real(kind=kind_phys) :: dust_alpha        !< alpha parameter for fengsha dust scheme
+    real(kind=kind_phys) :: dust_gamma        !< gamma parameter for fengsha dust scheme
+    real(kind=kind_phys) :: wetdep_ls_alpha   !< alpha parameter for wet deposition
     integer              :: seas_opt
     integer              :: dust_opt
-    integer              :: biomass_burn_opt
     integer              :: drydep_opt
     integer              :: wetdep_ls_opt
     logical              :: do_plumerise
@@ -1350,7 +1353,7 @@ module GFS_typedefs
     logical              :: aero_dir_fdb  ! smoke/dust direct
     logical              :: rrfs_smoke_debug
     logical              :: mix_chem
-    logical              :: fire_turb
+    logical              :: enh_mix
 
 !--- debug flags
     logical              :: debug
@@ -2676,7 +2679,7 @@ module GFS_typedefs
     endif
 
     ! -- Aerosols coupling options
-    if (Model%cplchm .or. Model%rrfs_smoke) then
+    if (Model%cplchm .or. Model%rrfs_sd) then
       !--- outgoing instantaneous quantities
       allocate (Coupling%ushfsfci  (IM))
       !--- accumulated convective rainfall
@@ -2756,7 +2759,7 @@ module GFS_typedefs
       Coupling%nifa2d   = clear_val
     endif
 
-   if(Model%rrfs_smoke) then
+   if(Model%rrfs_sd) then
     !--- needed for smoke aerosol option
       allocate (Coupling%emdust    (IM))
       allocate (Coupling%emseas    (IM))
@@ -2770,6 +2773,7 @@ module GFS_typedefs
       allocate (Coupling%smoke_ext (IM,Model%levs))
       allocate (Coupling%dust_ext  (IM,Model%levs))
       allocate (Coupling%chem3d    (IM,Model%levs,2))
+      allocate (Coupling%ddvel     (IM,2))
       allocate (Coupling%min_fplume(IM))
       allocate (Coupling%max_fplume(IM))
       allocate (Coupling%rrfs_hwp  (IM))
@@ -2786,6 +2790,7 @@ module GFS_typedefs
       Coupling%smoke_ext  = clear_val
       Coupling%dust_ext   = clear_val
       Coupling%chem3d     = clear_val
+      Coupling%ddvel      = clear_val
       Coupling%min_fplume = clear_val
       Coupling%max_fplume = clear_val
       Coupling%rrfs_hwp   = clear_val
@@ -2888,7 +2893,7 @@ module GFS_typedefs
     logical              :: cplwav2atm     = .false.         !< default no cplwav2atm coupling
     logical              :: cplaqm         = .false.         !< default no cplaqm collection
     logical              :: cplchm         = .false.         !< default no cplchm collection
-    logical              :: rrfs_smoke     = .false.         !< default no rrfs_smoke collection
+    logical              :: rrfs_sd        = .false.         !< default no rrfs_sd collection
     integer              :: dust_smoke_rrtmg_band_number = 10!< band number to affect in rrtmg_pre from smoke and dust
     logical              :: use_cice_alb   = .false.         !< default no cice albedo
     logical              :: cpl_imp_mrg    = .false.         !< default no merge import with internal forcings
@@ -3377,9 +3382,11 @@ module GFS_typedefs
     logical :: do_spp       = .false.
 
 !-- chem nml variables for RRFS-Smoke
+    real(kind=kind_phys) :: dust_alpha = 0.
+    real(kind=kind_phys) :: dust_gamma = 0.
+    real(kind=kind_phys) :: wetdep_ls_alpha = 0.
     integer :: seas_opt = 2
     integer :: dust_opt = 5
-    integer :: biomass_burn_opt = 1
     integer :: drydep_opt  = 1
     integer :: wetdep_ls_opt  = 1
     logical :: do_plumerise   = .false.
@@ -3390,7 +3397,7 @@ module GFS_typedefs
     logical :: aero_dir_fdb = .false.     ! RRFS-smoke smoke/dust radiation feedback
     logical :: rrfs_smoke_debug = .false. ! RRFS-smoke plumerise debug
     logical :: mix_chem = .false.         ! tracer mixing option by MYNN PBL
-    logical :: fire_turb = .false.        ! enh vertmix option by MYNN PBL
+    logical :: enh_mix  = .false.        ! enh vertmix option by MYNN PBL
 
 !--- aerosol scavenging factors
     integer, parameter :: max_scav_factors = 183
@@ -3408,7 +3415,7 @@ module GFS_typedefs
                                thermodyn_id, sfcpress_id,                                   &
                           !--- coupling parameters
                                cplflx, cplice, cplocn2atm, cplwav, cplwav2atm, cplaqm,      &
-                               cplchm, cpl_imp_mrg, cpl_imp_dbg, rrfs_smoke,                &
+                               cplchm, cpl_imp_mrg, cpl_imp_dbg, rrfs_sd,                   &
                                use_cice_alb, dust_smoke_rrtmg_band_number,                  &
 #ifdef IDEA_PHYS
                                lsidea, weimer_model, f107_kp_size, f107_kp_interval,        &
@@ -3529,10 +3536,11 @@ module GFS_typedefs
                           !--- aerosol scavenging factors ('name:value' string array)
                                fscav_aero,                                                  &
                           !--- RRFS smoke namelist
-                               seas_opt, dust_opt, biomass_burn_opt, drydep_opt,            &
+                               dust_alpha, dust_gamma, wetdep_ls_alpha,                     &
+                               seas_opt, dust_opt, drydep_opt,                              &
                                wetdep_ls_opt, smoke_forecast, aero_ind_fdb, aero_dir_fdb,   &
                                rrfs_smoke_debug, do_plumerise, plumerisefire_frq,           &
-                               addsmoke_flag, fire_turb, mix_chem,                          &
+                               addsmoke_flag, enh_mix, mix_chem,                            &
                           !--- (DFI) time ranges with radar-prescribed microphysics tendencies
                           !          and (maybe) convection suppression
                                fh_dfi_radar, radar_tten_limits, do_cap_suppress
@@ -3736,12 +3744,14 @@ module GFS_typedefs
     Model%cpl_imp_mrg      = cpl_imp_mrg
     Model%cpl_imp_dbg      = cpl_imp_dbg
 
-!--- RRFS Smoke
-    Model%rrfs_smoke        = rrfs_smoke
+!--- RRFS-SD
+    Model%rrfs_sd           = rrfs_sd
     Model%dust_smoke_rrtmg_band_number = dust_smoke_rrtmg_band_number
+    Model%dust_alpha        = dust_alpha
+    Model%dust_gamma        = dust_gamma
+    Model%wetdep_ls_alpha   = wetdep_ls_alpha
     Model%seas_opt          = seas_opt
     Model%dust_opt          = dust_opt
-    Model%biomass_burn_opt  = biomass_burn_opt
     Model%drydep_opt        = drydep_opt
     Model%wetdep_ls_opt     = wetdep_ls_opt
     Model%do_plumerise      = do_plumerise
@@ -3752,7 +3762,7 @@ module GFS_typedefs
     Model%aero_dir_fdb      = aero_dir_fdb
     Model%rrfs_smoke_debug  = rrfs_smoke_debug
     Model%mix_chem          = mix_chem
-    Model%fire_turb         = fire_turb
+    Model%enh_mix           = enh_mix
 
 !--- integrated dynamics through earth's atmosphere
     Model%lsidea           = lsidea
@@ -4421,8 +4431,10 @@ module GFS_typedefs
     Model%nqrimef          = get_tracer_index(Model%tracer_names, 'q_rimef',    Model%me, Model%master, Model%debug)
     Model%ntwa             = get_tracer_index(Model%tracer_names, 'liq_aero',   Model%me, Model%master, Model%debug)
     Model%ntia             = get_tracer_index(Model%tracer_names, 'ice_aero',   Model%me, Model%master, Model%debug)
+    if (Model%rrfs_sd) then
     Model%ntsmoke          = get_tracer_index(Model%tracer_names, 'smoke',      Model%me, Model%master, Model%debug)
     Model%ntdust           = get_tracer_index(Model%tracer_names, 'dust',       Model%me, Model%master, Model%debug)
+    endif
 
 !--- initialize parameters for atmospheric chemistry tracers
     call Model%init_chemistry(tracer_types)
@@ -5478,7 +5490,7 @@ module GFS_typedefs
     Model%ndchs = NO_TRACER
     Model%ndche = NO_TRACER
 
-    if (Model%rrfs_smoke) then
+    if (Model%rrfs_sd) then
       Model%nchem = 2
       Model%ndvel = 2
     endif
@@ -5614,17 +5626,19 @@ module GFS_typedefs
       print *, ' cplwav2atm        : ', Model%cplwav2atm
       print *, ' cplaqm            : ', Model%cplaqm
       print *, ' cplchm            : ', Model%cplchm
-      print *, ' rrfs_smoke        : ', Model%rrfs_smoke
+      print *, ' rrfs_sd           : ', Model%rrfs_sd
       print *, ' use_cice_alb      : ', Model%use_cice_alb
       print *, ' cpl_imp_mrg       : ', Model%cpl_imp_mrg
       print *, ' cpl_imp_dbg       : ', Model%cpl_imp_dbg
-      if(model%rrfs_smoke) then
+      if(model%rrfs_sd) then
         print *, ' '
         print *, 'smoke parameters'
         print *, 'dust_smoke_rrtmg_band_number : ',Model%dust_smoke_rrtmg_band_number
+        print *, 'dust_alpha       : ',Model%dust_alpha
+        print *, 'dust_gamma       : ',Model%dust_gamma
+        print *, 'wetdep_ls_alpha  : ',Model%wetdep_ls_alpha
         print *, 'seas_opt         : ',Model%seas_opt
         print *, 'dust_opt         : ',Model%dust_opt
-        print *, 'biomass_burn_opt : ',Model%biomass_burn_opt
         print *, 'drydep_opt       : ',Model%drydep_opt
         print *, 'wetdep_ls_opt    : ',Model%wetdep_ls_opt
         print *, 'do_plumerise     : ',Model%do_plumerise
@@ -5635,7 +5649,7 @@ module GFS_typedefs
         print *, 'aero_dir_fdb     : ',Model%aero_dir_fdb
         print *, 'rrfs_smoke_debug : ',Model%rrfs_smoke_debug
         print *, 'mix_chem         : ',Model%mix_chem
-        print *, 'fire_turb        : ',Model%fire_turb
+        print *, 'enh_mix          : ',Model%enh_mix
       endif
       print *, ' '
       print *, ' lsidea            : ', Model%lsidea

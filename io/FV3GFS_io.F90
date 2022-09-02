@@ -542,7 +542,7 @@ module FV3GFS_io_mod
     nvar_o2  = 19
     nvar_oro_ls_ss = 10
     nvar_s2o = 18
-    if(Model%rrfs_smoke) then
+    if(Model%rrfs_sd) then
       nvar_dust12m = 5
       nvar_gbbepx  = 3
       nvar_emi     = 1
@@ -692,7 +692,7 @@ module FV3GFS_io_mod
     !--- deallocate containers and free restart container
     deallocate(oro_name2, oro_var2)
 
-    if_smoke: if(Model%rrfs_smoke) then  ! for RRFS-Smoke
+    if_smoke: if(Model%rrfs_sd) then  ! for RRFS-SD
 
     !--- Dust input FILE
     !--- open file
