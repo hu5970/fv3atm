@@ -1766,8 +1766,8 @@ module GFS_diagnostics
 
 !    if(mpp_pe()==mpp_root_pe())print *,'in gfdl_diag_register,af totgrp,idx=',idx
 
-!--- RRFS Smoke ---
-    if (Model%rrfs_smoke) then
+!--- RRFS Smoke & Dust ---
+    if (Model%rrfs_sd) then
     idx = idx + 1
     ExtDiag(idx)%axes = 3
     ExtDiag(idx)%name = 'dqdti'
@@ -3658,7 +3658,7 @@ module GFS_diagnostics
       enddo
     end if thompson_extended_diagnostics
 
-    if (Model%rrfs_smoke .and. Model%ntsmoke>0) then
+    if (Model%rrfs_sd .and. Model%ntsmoke>0) then
       idx = idx + 1
       ExtDiag(idx)%axes = 2
       ExtDiag(idx)%name = 'emdust'
