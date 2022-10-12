@@ -18,7 +18,7 @@ module FV3GFS_io_mod
   use mpp_mod,            only: mpp_error,  mpp_pe, mpp_root_pe, &
                                 mpp_chksum, NOTE,   FATAL
   use fms_mod,            only: stdout
-  use FV3GFS_io_generic_mod,    only: GFS_io_generic_type, unlimited,      &
+  use fms2_io_mod,        only: FmsNetcdfDomainFile_t, unlimited,      &
                                 open_file, close_file,                 &
                                 register_axis, register_restart_field, &
                                 register_variable_attribute, register_field, &
@@ -65,8 +65,8 @@ module FV3GFS_io_mod
   character(len=32)  :: fn_rrfssd = 'SMOKE_RRFS_data.nc'
 
   !--- GFDL FMS netcdf restart data types defined in fms2_io
-  type(GFS_io_generic_type) :: Oro_restart, Sfc_restart, Phy_restart, dust12m_restart, emi_restart, rrfssd_restart
-  type(GFS_io_generic_type) :: Oro_ls_restart, Oro_ss_restart
+  type(FmsNetcdfDomainFile_t) :: Oro_restart, Sfc_restart, Phy_restart, dust12m_restart, emi_restart, rrfssd_restart
+  type(FmsNetcdfDomainFile_t) :: Oro_ls_restart, Oro_ss_restart
 
   !--- GFDL FMS restart containers
   character(len=32),    allocatable,         dimension(:)       :: oro_name2, sfc_name2, sfc_name3
